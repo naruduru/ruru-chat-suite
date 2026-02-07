@@ -1,0 +1,192 @@
+CUSTOMER STATUS SOURCE BUNDLE
+
+Backend
+
+1) CustomerStatusEvent.java
+package com.ruru.counselor.ws.dto;
+
+import java.time.Instant;
+
+public class CustomerStatusEvent {
+	public enum Status { LEFT, RETURNED }
+
+	private String customerId;
+	private Status status;
+	private Instant occurredAt;
+
+	public CustomerStatusEvent() {}
+
+	public CustomerStatusEvent(String customerId, Status status, Instant occurredAt) {
+		this.customerId = customerId;
+		this.status = status;
+		this.occurredAt = occurredAt;
+	}
+
+	public String getCustomerId() { return customerId; }
+	public void setCustomerId(String customerId) { this.customerId = customerId; }
+	public Status getStatus() { return status; }
+	public void setStatus(Status status) { this.status = status; }
+	public Instant getOccurredAt() { return occurredAt; }
+	public void setOccurredAt(Instant occurredAt) { this.occurredAt = occurredAt; }
+}
+
+2) RabbitConfig.java (customerStatus only)
+@Configuration
+public class RabbitConfig {
+	public static final String CUSTOMER_STATUS_QUEUE = "customer.status.all";
+	public static final String CUSTOMER_STATUS_EXCHANGE = "customer.status.exchange";
+	public static final String CUSTOMER_STATUS_ROUTING_KEY_PREFIX = "counselor.";
+
+	public static String counselorRoutingKey(String counselorId) {
+		return CUSTOMER_STATUS_ROUTING_KEY_PREFIX + counselorId;
+	}
+
+	@Bean
+	public Queue customerStatusQueue() {
+		return new Queue(CUSTOMER_STATUS_QUEUE, true);
+	}
+
+	@Bean
+	public TopicExchange customerStatusExchange() {
+		return new TopicExchange(CUSTOMER_STATUS_EXCHANGE, true, false);
+	}
+
+	@Bean
+	public Binding customerStatusBinding(Queue customerStatusQueue, TopicExchange customerStatusExchange) {
+		return BindingBuilder.bind(customerStatusQueue)
+				.to(customerStatusExchange)
+				.with("counselor.*");
+	}
+
+	@Bean
+	public ObjectMapper objectMapper() {
+		return JsonMapper.builder().addModule(new JavaTimeModule()).build();
+	}
+
+	@Bean
+	public Jackson2JsonMessageConverter jackson2JsonMessageConverter(ObjectMapper objectMapper) {
+		return new Jackson2JsonMessageConverter(objectMapper);
+	}
+
+	@Bean
+	public RabbitTemplate rabbitTemplate(ConnectionFactory cf, Jackson2JsonMessageConverter converter) {
+		RabbitTemplate t = new RabbitTemplate(cf);
+		t.setMessageConverter(converter);
+		return t;
+	}
+
+	@Bean
+	public RabbitAdmin rabbitAdmin(ConnectionFactory cf) {
+		RabbitAdmin admin = new RabbitAdmin(cf);
+		admin.setAutoStartup(true);
+		return admin;
+	}
+
+	@Bean
+	public Object rabbitDeclarer(RabbitAdmin admin, Queue q, TopicExchange ex, Binding b) {
+		admin.declareQueue(q);
+		admin.declareExchange(ex);
+		admin.declareBinding(b);
+		return new Object();
+	}
+}
+
+3) ChatController.java (customerStatus only)
+@MessageMapping("/customer/status")
+public void customerStatus(CustomerStatusEvent event) {
+	if (event == null || event.getCustomerId() == null || event.getStatus() == null) return;
+	event.setOccurredAt(Instant.now());
+	String routingKey = RabbitConfig.counselorRoutingKey(counselorId);
+	rabbitTemplate.convertAndSend(RabbitConfig.CUSTOMER_STATUS_EXCHANGE, routingKey, event);
+}
+
+4) CustomerStatusListener.java
+@Component
+public class CustomerStatusListener {
+	private final SimpMessagingTemplate messagingTemplate;
+	private final String counselorId;
+
+	public CustomerStatusListener(SimpMessagingTemplate messagingTemplate,
+			@Value("${counselor.id:default}") String counselorId) {
+		this.messagingTemplate = messagingTemplate;
+		this.counselorId = counselorId;
+	}
+
+	@RabbitListener(queues = "#{customerStatusQueue.name}")
+	public void handleCustomerStatus(CustomerStatusEvent event,
+			@Header(AmqpHeaders.RECEIVED_ROUTING_KEY) String routingKey) {
+		if (event == null) return;
+		String expectedKey = "counselor." + counselorId;
+		if (!expectedKey.equals(routingKey)) return;
+		messagingTemplate.convertAndSend("/topic/counselor/status", event);
+	}
+}
+
+5) WebSocketConfig.java (minimal)
+@Override
+public void configureMessageBroker(MessageBrokerRegistry registry) {
+	registry.setApplicationDestinationPrefixes("/app");
+	registry.enableSimpleBroker("/topic");
+}
+
+6) application.properties
+counselor.id=counselor-1
+spring.rabbitmq.host=localhost
+spring.rabbitmq.port=5672
+spring.rabbitmq.username=guest
+spring.rabbitmq.password=guest
+
+Frontend
+
+7) Customer sendStatus (customer/src/App.jsx)
+const STATUS_DEST = '/app/customer/status'
+const clientRef = useRef(null)
+
+const sendStatus = (status) => {
+  const client = clientRef.current
+  if (!client || !client.connected) return
+
+  const payload = {
+    customerId,
+    status,
+    occurredAt: new Date().toISOString(),
+  }
+
+  client.publish({
+    destination: STATUS_DEST,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+8) Counselor subscribe + UI update (counselor/src/App.jsx)
+const STATUS_TOPIC = '/topic/counselor/status'
+
+client.subscribe(STATUS_TOPIC, (message) => {
+  const payload = JSON.parse(message.body)
+  const event = {
+    id: crypto.randomUUID(),
+    customerId: payload.customerId,
+    status: payload.status,
+    occurredAt: payload.occurredAt,
+  }
+
+  setStatusByCustomer((prev) => ({
+    ...prev,
+    [event.customerId]: event.status,
+  }))
+  setStatusEvents((prev) => [event, ...prev].slice(0, 8))
+
+  const systemText =
+    event.status === 'LEFT'
+      ? '고객이 채팅을 이탈했습니다.'
+      : '고객이 채팅에 복귀했습니다.'
+
+  setMessages((prev) => ({
+    ...prev,
+    [event.customerId]: [
+      ...(prev[event.customerId] || []),
+      { id: crypto.randomUUID(), role: 'system', text: systemText },
+    ],
+  }))
+})

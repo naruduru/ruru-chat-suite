@@ -1,0 +1,6 @@
+flowchart LR
+  C[Customer UI] -->|STOMP /app/customer/status| WS[ChatController]
+  WS -->|publish| EX1{{customer.status.exchange}}
+  EX1 -->|routing key counselor-id| Q1[(customer.status.all)]
+  Q1 --> L[CustomerStatusListener]
+  L -->|/topic/counselor/status| U[Counselor UI]
