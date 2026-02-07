@@ -36,6 +36,12 @@ npm run dev -- --host --port 5174
 4) Click **이탈** or **복귀** buttons (top-right)
 5) Counselor UI should show status in the left panel and chat banner
 
+## Chat Test
+1) Customer UI: click **채팅 연결**
+2) Counselor UI: select the waiting card → **상담 시작**
+3) Send message from customer → counselor receives
+4) Send message from counselor → customer receives
+
 ## Diagrams
 - Customer status flow (PNG): `diagrams/customer-status.png`
 - Customer status flow (SVG): `diagrams/customer-status.svg`
