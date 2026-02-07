@@ -29,6 +29,13 @@ npm install
 npm run dev -- --host --port 5174
 ```
 
+## Customer Status Test
+1) Open customer UI: http://localhost:5173
+2) Open counselor UI: http://localhost:5174
+3) In customer UI, click **채팅 연결**
+4) Click **이탈** or **복귀** buttons (top-right)
+5) Counselor UI should show status in the left panel and chat banner
+
 ## Diagrams
 - Customer status flow (PNG): `diagrams/customer-status.png`
 - Customer status flow (SVG): `diagrams/customer-status.svg`
