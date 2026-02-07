@@ -7,6 +7,28 @@ Monorepo for customer, counselor, and counselor_be.
 - `counselor`
 - `counselor_be`
 
+## Run
+
+### 1) Backend (Spring)
+```bash
+cd counselor_be
+./gradlew bootRun
+```
+
+### 2) Customer (Vite)
+```bash
+cd customer
+npm install
+npm run dev -- --host
+```
+
+### 3) Counselor (Vite)
+```bash
+cd counselor
+npm install
+npm run dev -- --host --port 5174
+```
+
 ## Diagrams
 - Customer status flow (PNG): `diagrams/customer-status.png`
 - Customer status flow (SVG): `diagrams/customer-status.svg`
